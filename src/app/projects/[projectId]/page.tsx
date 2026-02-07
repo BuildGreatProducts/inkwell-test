@@ -87,23 +87,43 @@ export default function ProjectDetailPage({
   }
 
   const handleFetchTranscripts = async () => {
+    const MAX_FETCH_ROUNDS = 20; // Prevent unbounded fetching
     setIsFetchingTranscripts(true);
 
     try {
-      // Call the API endpoint which handles status updates internally
-      const response = await fetch("/api/transcripts/fetch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId }),
-      });
+      let round = 0;
+      let hasMore = true;
 
-      const result = await response.json();
+      while (hasMore && round < MAX_FETCH_ROUNDS) {
+        round++;
 
-      // If there are more videos pending, the API will tell us
-      if (result.remaining > 0) {
-        console.log(`${result.remaining} more videos pending. Fetching...`);
-        // Recursively fetch more (the API limits to MAX_BATCH_SIZE per request)
-        await handleFetchTranscripts();
+        // Call the API endpoint which handles status updates internally
+        const response = await fetch("/api/transcripts/fetch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId }),
+        });
+
+        // Validate response before parsing
+        if (!response.ok) {
+          const errorBody = await response.text();
+          throw new Error(
+            `Fetch failed with status ${response.status}: ${errorBody}`
+          );
+        }
+
+        const result = await response.json();
+
+        // If there are more videos pending, continue fetching
+        if (result.remaining > 0) {
+          console.log(`${result.remaining} more videos pending (round ${round}). Fetching...`);
+        } else {
+          hasMore = false;
+        }
+      }
+
+      if (round >= MAX_FETCH_ROUNDS) {
+        console.error(`Reached maximum fetch rounds (${MAX_FETCH_ROUNDS}). Some transcripts may not be fetched.`);
       }
     } catch (error) {
       console.error("Failed to fetch transcripts:", error);

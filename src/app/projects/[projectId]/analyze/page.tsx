@@ -161,7 +161,9 @@ export default function AnalyzePage({
     setIsGeneratingConcepts(true);
     setError(null);
     try {
-      await generateBookConcepts({ projectId, count: 3 });
+      // Pass existing concept IDs to avoid generating duplicates
+      const existingConceptIds = bookConcepts?.map((c) => c._id) ?? [];
+      await generateBookConcepts({ projectId, count: 3, existingConceptIds });
     } catch (err) {
       console.error("Failed to generate more concepts:", err);
       setError(err instanceof Error ? err.message : "Failed to generate more concepts");
