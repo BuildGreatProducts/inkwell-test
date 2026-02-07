@@ -30,13 +30,29 @@ export function verifySignedState(
 ): { valid: boolean; userId?: string; error?: string } {
   try {
     const decoded = Buffer.from(state, "base64url").toString("utf-8");
-    const parts = decoded.split(":");
 
-    if (parts.length !== 3) {
+    // Parse from the end to handle userIds that contain colons
+    // Format: userId:timestamp:signature
+    const lastColonIdx = decoded.lastIndexOf(":");
+    if (lastColonIdx === -1) {
       return { valid: false, error: "Invalid state format" };
     }
 
-    const [userId, timestampStr, signature] = parts;
+    const signature = decoded.substring(lastColonIdx + 1);
+    const remaining = decoded.substring(0, lastColonIdx);
+
+    const secondLastColonIdx = remaining.lastIndexOf(":");
+    if (secondLastColonIdx === -1) {
+      return { valid: false, error: "Invalid state format" };
+    }
+
+    const timestampStr = remaining.substring(secondLastColonIdx + 1);
+    const userId = remaining.substring(0, secondLastColonIdx);
+
+    if (!userId || !timestampStr || !signature) {
+      return { valid: false, error: "Invalid state format" };
+    }
+
     const timestamp = parseInt(timestampStr, 10);
 
     // Check timestamp validity

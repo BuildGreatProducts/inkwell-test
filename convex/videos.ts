@@ -1,6 +1,9 @@
 import { v } from "convex/values";
 import { mutation, query, internalQuery, internalMutation } from "./_generated/server";
 
+// Maximum number of videos allowed in a single batch to prevent timeouts/quota issues
+const MAX_VIDEOS_BATCH = 50;
+
 // Helper to get current user from auth context
 async function getCurrentUser(ctx: {
   auth: { getUserIdentity: () => Promise<{ subject: string } | null> };
@@ -170,6 +173,11 @@ export const createBatch = mutation({
     ),
   },
   handler: async (ctx, args) => {
+    // Validate batch size to prevent timeouts and quota issues
+    if (args.videos.length > MAX_VIDEOS_BATCH) {
+      throw new Error(`Too many videos: max ${MAX_VIDEOS_BATCH} per batch`);
+    }
+
     // @ts-expect-error - Helper uses dynamic typing
     const user = await getCurrentUser(ctx);
     if (!user) {

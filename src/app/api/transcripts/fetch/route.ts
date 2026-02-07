@@ -65,7 +65,17 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { projectId } = await request.json();
+  // Parse JSON body with dedicated error handling
+  let projectId: string;
+  try {
+    const body = await request.json();
+    projectId = body.projectId;
+  } catch (e) {
+    if (e instanceof SyntaxError) {
+      return Response.json({ error: "Malformed JSON body" }, { status: 400 });
+    }
+    throw e;
+  }
 
   if (!projectId) {
     return Response.json({ error: "Project ID required" }, { status: 400 });

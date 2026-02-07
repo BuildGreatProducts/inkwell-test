@@ -359,7 +359,7 @@ export async function getVideoTranscript(
   }
 
   // Download the caption track
-  // Note: This requires the youtube.force-ssl scope and the video owner's permission
+  // Note: This requires the video owner's permission (youtube.readonly scope is sufficient)
   try {
     const downloadResponse = await fetch(
       `${YOUTUBE_API_BASE}/captions/${selectedCaption.id}?tfmt=srt`,
