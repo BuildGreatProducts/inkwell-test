@@ -20,12 +20,12 @@ export default function Home() {
               beautifully formatted books ready for Amazon KDP.
             </p>
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Button asChild size="lg">
-                <Link href="/sign-up">Start Your Book</Link>
-              </Button>
-              <Button asChild variant="outline" size="lg">
-                <Link href="#how-it-works">See How It Works</Link>
-              </Button>
+              <Link href="/sign-up">
+                <Button size="lg">Start Your Book</Button>
+              </Link>
+              <Link href="#how-it-works">
+                <Button variant="outline" size="lg">See How It Works</Button>
+              </Link>
             </div>
           </div>
         </div>

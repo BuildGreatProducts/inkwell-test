@@ -135,9 +135,16 @@ export default function ProjectDetailPage({
           <div className="flex gap-3">
             <Button variant="outline">Edit Project</Button>
             {project.status === "draft" && transcriptStats && transcriptStats.pending > 0 && (
-              <Button onClick={handleFetchTranscripts} isLoading={isFetchingTranscripts}>
+              <Button variant="secondary" onClick={handleFetchTranscripts} isLoading={isFetchingTranscripts}>
                 {isFetchingTranscripts ? "Fetching..." : `Fetch Transcripts (${transcriptStats.pending} pending)`}
               </Button>
+            )}
+            {transcriptStats && transcriptStats.completed > 0 && (
+              <Link href={`/projects/${projectId}/analyze`}>
+                <Button>
+                  {project.voiceProfile ? "View Analysis" : "Start Analysis"}
+                </Button>
+              </Link>
             )}
           </div>
         </div>

@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { ConvexHttpClient } from "convex/browser";
-import { api, internal } from "../../../../../convex/_generated/api";
+import { internal } from "../../../../../convex/_generated/api";
 import { exchangeCodeForTokens, verifySignedState } from "@/lib/youtube/oauth";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);

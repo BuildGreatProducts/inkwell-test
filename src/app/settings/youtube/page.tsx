@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useQuery, useMutation } from "convex/react";
@@ -10,17 +10,18 @@ import { Button, Card, CardHeader, CardTitle, CardDescription, LoadingScreen } f
 
 export default function YouTubeSettingsPage() {
   const searchParams = useSearchParams();
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [actionMessage, setActionMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const user = useQuery(api.users.getCurrentUser);
   const disconnectYouTube = useMutation(api.users.disconnectYouTube);
 
-  useEffect(() => {
+  // Compute URL-based message from search params (derived state, not effect)
+  const urlMessage = useMemo(() => {
     const success = searchParams.get("success");
     const error = searchParams.get("error");
 
     if (success === "true") {
-      setMessage({ type: "success", text: "Successfully connected your YouTube account!" });
+      return { type: "success" as const, text: "Successfully connected your YouTube account!" };
     } else if (error) {
       const errorMessages: Record<string, string> = {
         oauth_denied: "YouTube authorization was denied.",
@@ -29,21 +30,25 @@ export default function YouTubeSettingsPage() {
         user_not_found: "User not found. Please sign in again.",
         token_exchange_failed: "Failed to complete authorization. Please try again.",
       };
-      setMessage({
-        type: "error",
+      return {
+        type: "error" as const,
         text: errorMessages[error] || "An error occurred. Please try again.",
-      });
+      };
     }
+    return null;
   }, [searchParams]);
+
+  // Show action message (from disconnect) if set, otherwise show URL message
+  const message = actionMessage || urlMessage;
 
   const handleDisconnect = async () => {
     if (!user) return;
 
     try {
       await disconnectYouTube({ userId: user._id });
-      setMessage({ type: "success", text: "YouTube account disconnected." });
+      setActionMessage({ type: "success", text: "YouTube account disconnected." });
     } catch {
-      setMessage({ type: "error", text: "Failed to disconnect YouTube account." });
+      setActionMessage({ type: "error", text: "Failed to disconnect YouTube account." });
     }
   };
 
