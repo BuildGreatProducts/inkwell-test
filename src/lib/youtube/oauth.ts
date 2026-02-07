@@ -71,7 +71,16 @@ export function verifySignedState(
     hmac.update(payload);
     const expectedSignature = hmac.digest("hex");
 
-    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+    // Convert to buffers with consistent encoding (hex strings)
+    const signatureBuffer = Buffer.from(signature, "hex");
+    const expectedBuffer = Buffer.from(expectedSignature, "hex");
+
+    // Length check before timingSafeEqual to prevent RangeError
+    if (signatureBuffer.length !== expectedBuffer.length) {
+      return { valid: false, error: "Invalid signature" };
+    }
+
+    if (!crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
       return { valid: false, error: "Invalid signature" };
     }
 
