@@ -1,12 +1,73 @@
 // YouTube OAuth configuration and utilities
+import crypto from "crypto";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 
-// Scopes needed for YouTube Data API
+// Get the HMAC secret (should be set in environment variables)
+function getHmacSecret(): string {
+  const secret = process.env.OAUTH_STATE_SECRET;
+  if (!secret) {
+    throw new Error("OAUTH_STATE_SECRET environment variable is not set");
+  }
+  return secret;
+}
+
+// Create an HMAC-signed state token for CSRF protection
+export function createSignedState(userId: string): string {
+  const timestamp = Date.now();
+  const payload = `${userId}:${timestamp}`;
+  const hmac = crypto.createHmac("sha256", getHmacSecret());
+  hmac.update(payload);
+  const signature = hmac.digest("hex");
+  return Buffer.from(`${payload}:${signature}`).toString("base64url");
+}
+
+// Verify and parse an HMAC-signed state token
+export function verifySignedState(
+  state: string,
+  maxAgeMs: number = 10 * 60 * 1000 // 10 minutes default
+): { valid: boolean; userId?: string; error?: string } {
+  try {
+    const decoded = Buffer.from(state, "base64url").toString("utf-8");
+    const parts = decoded.split(":");
+
+    if (parts.length !== 3) {
+      return { valid: false, error: "Invalid state format" };
+    }
+
+    const [userId, timestampStr, signature] = parts;
+    const timestamp = parseInt(timestampStr, 10);
+
+    // Check timestamp validity
+    if (isNaN(timestamp)) {
+      return { valid: false, error: "Invalid timestamp" };
+    }
+
+    // Check if state has expired
+    if (Date.now() - timestamp > maxAgeMs) {
+      return { valid: false, error: "State expired" };
+    }
+
+    // Verify HMAC signature
+    const payload = `${userId}:${timestampStr}`;
+    const hmac = crypto.createHmac("sha256", getHmacSecret());
+    hmac.update(payload);
+    const expectedSignature = hmac.digest("hex");
+
+    if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature))) {
+      return { valid: false, error: "Invalid signature" };
+    }
+
+    return { valid: true, userId };
+  } catch {
+    return { valid: false, error: "Failed to parse state" };
+  }
+}
+
+// Scopes needed for YouTube Data API (readonly is sufficient for fetching videos/transcripts)
 const YOUTUBE_SCOPES = [
   "https://www.googleapis.com/auth/youtube.readonly",
-  "https://www.googleapis.com/auth/youtube.force-ssl",
 ];
 
 export function getYouTubeAuthUrl(state: string): string {

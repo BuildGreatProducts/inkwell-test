@@ -69,7 +69,8 @@ export default defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_project", ["projectId"])
-    .index("by_youtube_id", ["youtubeId"]),
+    .index("by_youtube_id", ["youtubeId"])
+    .index("by_user_youtube_id", ["userId", "youtubeId"]),
 
   // Voice Profiles table
   voiceProfiles: defineTable({

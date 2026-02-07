@@ -21,6 +21,7 @@ export default function NewProjectPage() {
 
   const [step, setStep] = useState<Step>("details");
   const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Form state
   const [projectName, setProjectName] = useState("");
@@ -78,11 +79,11 @@ export default function NewProjectPage() {
     if (!user || !projectName.trim()) return;
 
     setIsCreating(true);
+    setError(null);
 
     try {
-      // Create project
+      // Create project (auth is handled server-side, no need to pass userId)
       const projectId = await createProject({
-        userId: user._id,
         name: projectName.trim(),
         description: projectDescription.trim() || undefined,
       });
@@ -90,7 +91,6 @@ export default function NewProjectPage() {
       // Create video records and add to project
       if (selectedVideos.length > 0) {
         const videoIds = await createVideos({
-          userId: user._id,
           projectId,
           videos: selectedVideos.map((v) => ({
             youtubeId: v.id,
@@ -109,8 +109,9 @@ export default function NewProjectPage() {
       }
 
       router.push(`/projects/${projectId}`);
-    } catch (error) {
-      console.error("Failed to create project:", error);
+    } catch (err) {
+      console.error("Failed to create project:", err);
+      setError(err instanceof Error ? err.message : "Failed to create project. Please try again.");
       setIsCreating(false);
     }
   };
@@ -292,6 +293,12 @@ export default function NewProjectPage() {
                 </ul>
               </div>
             </div>
+
+            {error && (
+              <div className="bg-error-50 border border-error-200 rounded-lg p-4">
+                <p className="text-error-600 text-sm">{error}</p>
+              </div>
+            )}
 
             <div className="flex justify-between mt-8">
               <Button variant="outline" onClick={() => setStep("videos")}>

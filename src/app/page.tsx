@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui";
+import { Button, Card, CardHeader, CardTitle, CardDescription } from "@/components/ui";
 import { Header } from "@/components/layout";
 
 export default function Home() {
@@ -20,18 +20,12 @@ export default function Home() {
               beautifully formatted books ready for Amazon KDP.
             </p>
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link
-                href="/sign-up"
-                className="inline-flex items-center justify-center font-medium transition-all duration-200 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 bg-primary-600 text-white hover:bg-primary-700 focus-visible:ring-primary-500 shadow-sm hover:shadow-md h-12 px-6 text-base gap-2.5"
-              >
-                Start Your Book
-              </Link>
-              <Link
-                href="#how-it-works"
-                className="inline-flex items-center justify-center font-medium transition-all duration-200 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 border border-neutral-300 bg-transparent text-neutral-700 hover:bg-neutral-50 focus-visible:ring-neutral-500 h-12 px-6 text-base gap-2.5"
-              >
-                See How It Works
-              </Link>
+              <Button asChild size="lg">
+                <Link href="/sign-up">Start Your Book</Link>
+              </Button>
+              <Button asChild variant="outline" size="lg">
+                <Link href="#how-it-works">See How It Works</Link>
+              </Button>
             </div>
           </div>
         </div>

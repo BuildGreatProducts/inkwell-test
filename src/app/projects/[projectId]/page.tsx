@@ -1,8 +1,8 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
-import { useQuery, useMutation } from "convex/react";
+import { useQuery } from "convex/react";
 import { api } from "../../../../convex/_generated/api";
 import { Id } from "../../../../convex/_generated/dataModel";
 import { Header } from "@/components/layout";
@@ -18,7 +18,7 @@ export default function ProjectDetailPage({
 
   const project = useQuery(api.projects.getWithDetails, { projectId });
   const transcriptStats = useQuery(api.videos.getTranscriptStats, { projectId });
-  const updateTranscriptStatus = useMutation(api.videos.updateTranscriptStatus);
+  const [isFetchingTranscripts, setIsFetchingTranscripts] = useState(false);
 
   if (project === undefined) {
     return (
@@ -51,26 +51,28 @@ export default function ProjectDetailPage({
   }
 
   const handleFetchTranscripts = async () => {
-    // Mark all pending videos as fetching
-    for (const video of project.videos) {
-      if (video.transcriptStatus === "pending") {
-        await updateTranscriptStatus({
-          videoId: video._id,
-          status: "fetching",
-        });
-      }
-    }
+    setIsFetchingTranscripts(true);
 
-    // In a real implementation, you'd trigger a background job here
-    // For now, we'll simulate by calling an API endpoint
     try {
-      await fetch("/api/transcripts/fetch", {
+      // Call the API endpoint which handles status updates internally
+      const response = await fetch("/api/transcripts/fetch", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId }),
       });
+
+      const result = await response.json();
+
+      // If there are more videos pending, the API will tell us
+      if (result.remaining > 0) {
+        console.log(`${result.remaining} more videos pending. Fetching...`);
+        // Recursively fetch more (the API limits to MAX_BATCH_SIZE per request)
+        await handleFetchTranscripts();
+      }
     } catch (error) {
       console.error("Failed to fetch transcripts:", error);
+    } finally {
+      setIsFetchingTranscripts(false);
     }
   };
 
@@ -133,8 +135,8 @@ export default function ProjectDetailPage({
           <div className="flex gap-3">
             <Button variant="outline">Edit Project</Button>
             {project.status === "draft" && transcriptStats && transcriptStats.pending > 0 && (
-              <Button onClick={handleFetchTranscripts}>
-                Fetch Transcripts ({transcriptStats.pending} pending)
+              <Button onClick={handleFetchTranscripts} isLoading={isFetchingTranscripts}>
+                {isFetchingTranscripts ? "Fetching..." : `Fetch Transcripts (${transcriptStats.pending} pending)`}
               </Button>
             )}
           </div>

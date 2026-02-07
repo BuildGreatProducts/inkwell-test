@@ -110,6 +110,16 @@ export async function getMyVideos(
   }
 
   const playlistData = await playlistResponse.json();
+
+  // Guard against empty items array
+  if (!playlistData.items || playlistData.items.length === 0) {
+    return {
+      items: [],
+      nextPageToken: playlistData.nextPageToken,
+      totalResults: playlistData.pageInfo?.totalResults || 0,
+    };
+  }
+
   const videoIds = playlistData.items
     .map((item: { snippet: { resourceId: { videoId: string } } }) => item.snippet.resourceId.videoId)
     .join(",");
@@ -129,6 +139,15 @@ export async function getMyVideos(
   }
 
   const videosData = await videosResponse.json();
+
+  // Guard against empty video details
+  if (!videosData.items || videosData.items.length === 0) {
+    return {
+      items: [],
+      nextPageToken: playlistData.nextPageToken,
+      totalResults: playlistData.pageInfo?.totalResults || 0,
+    };
+  }
 
   let videos: YouTubeVideo[] = videosData.items.map(
     (video: {
@@ -227,6 +246,16 @@ export async function searchMyVideos(
   }
 
   const searchData = await searchResponse.json();
+
+  // Guard against empty items array
+  if (!searchData.items || searchData.items.length === 0) {
+    return {
+      items: [],
+      nextPageToken: searchData.nextPageToken,
+      totalResults: searchData.pageInfo?.totalResults || 0,
+    };
+  }
+
   const videoIds = searchData.items
     .map((item: { id: { videoId: string } }) => item.id.videoId)
     .join(",");
@@ -250,6 +279,15 @@ export async function searchMyVideos(
   }
 
   const videosData = await videosResponse.json();
+
+  // Guard against empty video details
+  if (!videosData.items || videosData.items.length === 0) {
+    return {
+      items: [],
+      nextPageToken: searchData.nextPageToken,
+      totalResults: searchData.pageInfo?.totalResults || 0,
+    };
+  }
 
   const videos: YouTubeVideo[] = videosData.items.map(
     (video: {

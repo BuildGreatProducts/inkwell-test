@@ -1,6 +1,6 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
-import { getYouTubeAuthUrl } from "@/lib/youtube/oauth";
+import { getYouTubeAuthUrl, createSignedState } from "@/lib/youtube/oauth";
 
 export async function GET() {
   const { userId } = await auth();
@@ -9,9 +9,8 @@ export async function GET() {
     return new Response("Unauthorized", { status: 401 });
   }
 
-  // Generate a state parameter to prevent CSRF attacks
-  // In production, you'd want to store this in a session or cookie
-  const state = Buffer.from(JSON.stringify({ userId, timestamp: Date.now() })).toString("base64");
+  // Generate an HMAC-signed state parameter for CSRF protection
+  const state = createSignedState(userId);
 
   const authUrl = getYouTubeAuthUrl(state);
 

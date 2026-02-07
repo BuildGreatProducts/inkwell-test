@@ -1,11 +1,62 @@
 import { auth } from "@clerk/nextjs/server";
 import { ConvexHttpClient } from "convex/browser";
-import { api } from "../../../../../convex/_generated/api";
+import { internal } from "../../../../../convex/_generated/api";
 import { Id } from "../../../../../convex/_generated/dataModel";
 import { getVideoTranscript } from "@/lib/youtube/api";
 import { refreshAccessToken } from "@/lib/youtube/oauth";
 
 const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+
+// Maximum number of videos to process per request to prevent timeouts
+const MAX_BATCH_SIZE = 5;
+
+interface YouTubeTokens {
+  accessToken: string;
+  refreshToken: string;
+  expiresAt: number;
+}
+
+interface ConvexUser {
+  _id: Id<"users">;
+  youtubeConnected: boolean;
+  youtubeTokens?: YouTubeTokens;
+}
+
+// Helper to refresh access token if needed
+async function ensureValidAccessToken(
+  user: ConvexUser
+): Promise<{ accessToken: string; refreshed: boolean } | { error: string }> {
+  if (!user.youtubeTokens) {
+    return { error: "No YouTube tokens available" };
+  }
+
+  const { accessToken, refreshToken, expiresAt } = user.youtubeTokens;
+
+  // Check if token expires within the next minute
+  if (Date.now() >= expiresAt - 60000) {
+    try {
+      const newTokens = await refreshAccessToken(refreshToken);
+      const newExpiresAt = Date.now() + newTokens.expires_in * 1000;
+
+      // Update tokens in database
+      await convex.mutation(internal.users.updateYouTubeConnectionInternal, {
+        userId: user._id,
+        youtubeTokens: {
+          accessToken: newTokens.access_token,
+          refreshToken: refreshToken, // Preserve original refresh token
+          expiresAt: newExpiresAt,
+        },
+      });
+
+      return { accessToken: newTokens.access_token, refreshed: true };
+    } catch (error) {
+      console.error("Failed to refresh token:", error);
+      return { error: "Failed to refresh YouTube token" };
+    }
+  }
+
+  return { accessToken, refreshed: false };
+}
 
 export async function POST(request: Request) {
   const { userId } = await auth();
@@ -21,15 +72,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    // Get user from Convex
-    const user = await convex.query(api.users.getByClerkId, { clerkId: userId });
+    // Get user from Convex using internal query
+    const user = await convex.query(internal.users.getByClerkId, { clerkId: userId }) as ConvexUser | null;
 
     if (!user || !user.youtubeConnected || !user.youtubeTokens) {
       return Response.json({ error: "YouTube account not connected" }, { status: 400 });
     }
 
-    // Get project videos
-    const videos = await convex.query(api.videos.listByProject, {
+    // Get project videos using internal query to bypass auth (we've already verified userId)
+    const videos = await convex.query(internal.videos.listByProjectInternal, {
       projectId: projectId as Id<"projects">,
     });
 
@@ -42,36 +93,25 @@ export async function POST(request: Request) {
       return Response.json({ message: "No pending transcripts" });
     }
 
-    // Refresh token if needed
-    let accessToken = user.youtubeTokens.accessToken;
-    if (Date.now() >= user.youtubeTokens.expiresAt - 60000) {
-      try {
-        const newTokens = await refreshAccessToken(user.youtubeTokens.refreshToken);
-        const expiresAt = Date.now() + newTokens.expires_in * 1000;
+    // Limit batch size to prevent timeouts
+    const videosToProcess = pendingVideos.slice(0, MAX_BATCH_SIZE);
+    const remaining = pendingVideos.length - videosToProcess.length;
 
-        await convex.mutation(api.users.updateYouTubeConnection, {
-          userId: user._id,
-          youtubeTokens: {
-            accessToken: newTokens.access_token,
-            refreshToken: user.youtubeTokens.refreshToken,
-            expiresAt,
-          },
-        });
-
-        accessToken = newTokens.access_token;
-      } catch (error) {
-        console.error("Failed to refresh token:", error);
-        return Response.json({ error: "Failed to refresh YouTube token" }, { status: 401 });
-      }
+    // Ensure we have a valid access token
+    const tokenResult = await ensureValidAccessToken(user);
+    if ("error" in tokenResult) {
+      return Response.json({ error: tokenResult.error }, { status: 401 });
     }
+
+    const { accessToken } = tokenResult;
 
     // Process each video
     const results: { videoId: string; status: string }[] = [];
 
-    for (const video of pendingVideos) {
+    for (const video of videosToProcess) {
       try {
         // Update status to fetching
-        await convex.mutation(api.videos.updateTranscriptStatus, {
+        await convex.mutation(internal.videos.updateTranscriptStatusInternal, {
           videoId: video._id,
           status: "fetching",
         });
@@ -80,14 +120,14 @@ export async function POST(request: Request) {
         const transcript = await getVideoTranscript(accessToken, video.youtubeId);
 
         if (transcript) {
-          await convex.mutation(api.videos.updateTranscriptStatus, {
+          await convex.mutation(internal.videos.updateTranscriptStatusInternal, {
             videoId: video._id,
             status: "completed",
             transcript,
           });
           results.push({ videoId: video._id, status: "completed" });
         } else {
-          await convex.mutation(api.videos.updateTranscriptStatus, {
+          await convex.mutation(internal.videos.updateTranscriptStatusInternal, {
             videoId: video._id,
             status: "unavailable",
             error: "No transcript available for this video",
@@ -96,7 +136,7 @@ export async function POST(request: Request) {
         }
       } catch (error) {
         console.error(`Failed to fetch transcript for ${video.youtubeId}:`, error);
-        await convex.mutation(api.videos.updateTranscriptStatus, {
+        await convex.mutation(internal.videos.updateTranscriptStatusInternal, {
           videoId: video._id,
           status: "failed",
           error: error instanceof Error ? error.message : "Unknown error",
@@ -105,7 +145,11 @@ export async function POST(request: Request) {
       }
     }
 
-    return Response.json({ results });
+    return Response.json({
+      results,
+      remaining,
+      message: remaining > 0 ? `${remaining} more videos pending. Call again to process more.` : undefined,
+    });
   } catch (error) {
     console.error("Failed to fetch transcripts:", error);
     return Response.json({ error: "Failed to fetch transcripts" }, { status: 500 });
