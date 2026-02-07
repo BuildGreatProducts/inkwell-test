@@ -382,13 +382,6 @@ function parseVoiceProfileResponse(response: string): VoiceProfileData {
   }
 }
 
-interface BookConceptData {
-  title: string;
-  subtitle?: string;
-  blurb: string;
-  primaryThemes: string[];
-}
-
 function parseBookConceptsResponse(response: string): BookConceptData[] {
   try {
     const jsonMatch = response.match(/\{[\s\S]*\}/);
@@ -1085,6 +1078,12 @@ export const generateBookConcepts = action({
 
       return conceptIds;
     } catch (error) {
+      // Log error and reset status on failure
+      console.error("Failed to generate book concepts:", error);
+      await ctx.runMutation(internal.ai.updateProjectStatus, {
+        projectId: args.projectId,
+        status: "draft",
+      });
       throw error;
     }
   },
@@ -1186,6 +1185,12 @@ Please generate an updated voice profile that addresses this feedback while main
 
       return voiceProfileId;
     } catch (error) {
+      // Log error and reset status on failure
+      console.error("Failed to regenerate voice profile:", error);
+      await ctx.runMutation(internal.ai.updateProjectStatus, {
+        projectId: args.projectId,
+        status: "draft",
+      });
       throw error;
     }
   },

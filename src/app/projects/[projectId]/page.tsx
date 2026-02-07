@@ -8,10 +8,10 @@ import { Id } from "../../../../convex/_generated/dataModel";
 import { Header } from "@/components/layout";
 import { Button, Card, CardHeader, CardTitle, CardDescription, LoadingScreen } from "@/components/ui";
 
-// Helper to validate Convex ID format (basic validation)
+// Helper to validate Convex ID format (Crockford Base32)
 function isValidConvexId(id: string): boolean {
-  // Convex IDs are non-empty strings, typically alphanumeric with specific format
-  return typeof id === "string" && id.length > 0 && /^[a-z0-9]+$/i.test(id);
+  // Convex IDs use Crockford Base32 which excludes I, L, O, U
+  return typeof id === "string" && id.length > 0 && /^[0-9a-hj-km-np-tv-z]+$/i.test(id);
 }
 
 export default function ProjectDetailPage({
