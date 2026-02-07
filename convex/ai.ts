@@ -234,6 +234,56 @@ Respond with valid JSON in this exact format:
 Respond ONLY with valid JSON. Do not include any other text.`;
 }
 
+interface BookConceptData {
+  title: string;
+  subtitle?: string;
+  blurb: string;
+  primaryThemes: string[];
+}
+
+// Generate prompt for additional book concepts (with exclusions)
+function createMoreConceptsPrompt(
+  transcripts: string[],
+  voiceProfile: VoiceProfileData,
+  existingConcepts: BookConceptData[],
+  count: number = 3
+): string {
+  const combinedTranscripts = transcripts.join("\n\n---\n\n");
+  const existingTitles = existingConcepts.map((c) => c.title).join(", ");
+
+  return `Based on the following content and voice profile, generate ${count} NEW and DISTINCT book concept options.
+
+VOICE PROFILE:
+- Formality: ${voiceProfile.formalityLevel}
+- Teaching Style: ${voiceProfile.teachingStyle}
+- Vocabulary Patterns: ${voiceProfile.vocabularyPatterns.join(", ")}
+- Common Phrases: ${voiceProfile.commonPhrases.join(", ")}
+- Personality Traits: ${voiceProfile.personalityTraits.join(", ")}
+${voiceProfile.additionalNotes ? `- Additional Notes: ${voiceProfile.additionalNotes}` : ""}
+
+EXISTING CONCEPTS TO AVOID (generate something different):
+${existingTitles}
+
+TRANSCRIPTS:
+${combinedTranscripts}
+
+Generate ${count} NEW book concepts that are distinctly different from the existing ones. Explore different angles, target audiences, or approaches to the material.
+
+Respond with valid JSON in this exact format:
+{
+  "concepts": [
+    {
+      "title": "Book Title Here",
+      "subtitle": "Optional Subtitle That Clarifies Value",
+      "blurb": "A 2-3 sentence compelling description that would work on the back cover. It should hook the reader and convey the book's core value proposition.",
+      "primaryThemes": ["Theme 1", "Theme 2", "Theme 3"]
+    }
+  ]
+}
+
+Respond ONLY with valid JSON. Do not include any other text.`;
+}
+
 // ============================================
 // Response Parsers
 // ============================================
@@ -327,12 +377,38 @@ function parseBookConceptsResponse(response: string): BookConceptData[] {
 // Internal Queries
 // ============================================
 
-// Get project with videos for AI processing
+// Get user ID from Clerk identity
+export const getUserFromAuth = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      return null;
+    }
+
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_clerk_id", (q) => q.eq("clerkId", identity.subject))
+      .first();
+
+    return user;
+  },
+});
+
+// Get project with videos for AI processing (with ownership verification)
 export const getProjectForAnalysis = internalQuery({
-  args: { projectId: v.id("projects") },
+  args: {
+    projectId: v.id("projects"),
+    userId: v.id("users"),
+  },
   handler: async (ctx, args) => {
     const project = await ctx.db.get(args.projectId);
     if (!project) {
+      return null;
+    }
+
+    // Verify ownership
+    if (!project.userId || project.userId.toString() !== args.userId.toString()) {
       return null;
     }
 
@@ -733,13 +809,20 @@ export const selectBookConcept = mutation({
 export const generateVoiceProfile = action({
   args: { projectId: v.id("projects") },
   handler: async (ctx, args): Promise<Id<"voiceProfiles">> => {
-    // Get project data
+    // Verify authentication and get user
+    const user = await ctx.runQuery(internal.ai.getUserFromAuth, {});
+    if (!user) {
+      throw new Error("Unauthorized: not authenticated");
+    }
+
+    // Get project data (with ownership verification)
     const projectData = await ctx.runQuery(internal.ai.getProjectForAnalysis, {
       projectId: args.projectId,
+      userId: user._id,
     });
 
     if (!projectData) {
-      throw new Error("Project not found");
+      throw new Error("Project not found or unauthorized");
     }
 
     if (projectData.transcripts.length === 0) {
@@ -760,7 +843,8 @@ export const generateVoiceProfile = action({
       const combinedLength = projectData.transcripts.join("").length;
       let transcriptsToAnalyze = projectData.transcripts;
 
-      if (estimateTokenCount(combinedLength.toString()) > 80000) {
+      // Fix: Use the actual combined length for token estimation (4 chars per token)
+      if (Math.ceil(combinedLength / 4) > 80000) {
         // Chunk individual transcripts if needed
         transcriptsToAnalyze = projectData.transcripts.flatMap((t) =>
           chunkText(t, 20000)
@@ -821,17 +905,25 @@ export const generateBookConcepts = action({
   args: {
     projectId: v.id("projects"),
     count: v.optional(v.number()),
+    existingConceptIds: v.optional(v.array(v.id("bookConcepts"))),
   },
   handler: async (ctx, args): Promise<Id<"bookConcepts">[]> => {
     const conceptCount = args.count ?? 4;
 
-    // Get project data
+    // Verify authentication and get user
+    const user = await ctx.runQuery(internal.ai.getUserFromAuth, {});
+    if (!user) {
+      throw new Error("Unauthorized: not authenticated");
+    }
+
+    // Get project data (with ownership verification)
     const projectData = await ctx.runQuery(internal.ai.getProjectForAnalysis, {
       projectId: args.projectId,
+      userId: user._id,
     });
 
     if (!projectData) {
-      throw new Error("Project not found");
+      throw new Error("Project not found or unauthorized");
     }
 
     if (projectData.transcripts.length === 0) {
@@ -855,26 +947,52 @@ export const generateBookConcepts = action({
       let transcriptsToAnalyze = projectData.transcripts;
       const combinedLength = transcriptsToAnalyze.join("").length;
 
-      if (estimateTokenCount(combinedLength.toString()) > 80000) {
+      // Fix: Use the actual combined length for token estimation (4 chars per token)
+      if (Math.ceil(combinedLength / 4) > 80000) {
         transcriptsToAnalyze = projectData.transcripts.flatMap((t) =>
           chunkText(t, 20000)
         );
         transcriptsToAnalyze = transcriptsToAnalyze.slice(0, 10);
       }
 
-      // Generate prompt
-      const prompt = createBookConceptPrompt(
-        transcriptsToAnalyze,
-        {
-          formalityLevel: voiceProfile.formalityLevel,
-          teachingStyle: voiceProfile.teachingStyle,
-          vocabularyPatterns: voiceProfile.vocabularyPatterns,
-          commonPhrases: voiceProfile.commonPhrases,
-          personalityTraits: voiceProfile.personalityTraits,
-          additionalNotes: voiceProfile.additionalNotes,
-        },
-        conceptCount
-      );
+      const voiceProfileData = {
+        formalityLevel: voiceProfile.formalityLevel,
+        teachingStyle: voiceProfile.teachingStyle,
+        vocabularyPatterns: voiceProfile.vocabularyPatterns,
+        commonPhrases: voiceProfile.commonPhrases,
+        personalityTraits: voiceProfile.personalityTraits,
+        additionalNotes: voiceProfile.additionalNotes,
+      };
+
+      // Get existing concepts if provided (for generating more unique concepts)
+      let existingConceptData: BookConceptData[] = [];
+      if (args.existingConceptIds && args.existingConceptIds.length > 0) {
+        const allConcepts = await ctx.runQuery(internal.ai.getBookConceptsByProject, {
+          projectId: args.projectId,
+        });
+        existingConceptData = allConcepts
+          .filter((c) => args.existingConceptIds!.includes(c._id as Id<"bookConcepts">))
+          .map((c) => ({
+            title: c.title as string,
+            subtitle: c.subtitle as string | undefined,
+            blurb: c.blurb as string,
+            primaryThemes: c.primaryThemes as string[],
+          }));
+      }
+
+      // Generate prompt - use createMoreConceptsPrompt if we have existing concepts
+      const prompt = existingConceptData.length > 0
+        ? createMoreConceptsPrompt(
+            transcriptsToAnalyze,
+            voiceProfileData,
+            existingConceptData,
+            conceptCount
+          )
+        : createBookConceptPrompt(
+            transcriptsToAnalyze,
+            voiceProfileData,
+            conceptCount
+          );
 
       // Call Claude API with retry
       const response = await withRetry(async () => {
@@ -925,13 +1043,20 @@ export const regenerateVoiceProfile = action({
     feedback: v.string(),
   },
   handler: async (ctx, args): Promise<Id<"voiceProfiles">> => {
-    // Get project data
+    // Verify authentication and get user
+    const user = await ctx.runQuery(internal.ai.getUserFromAuth, {});
+    if (!user) {
+      throw new Error("Unauthorized: not authenticated");
+    }
+
+    // Get project data (with ownership verification)
     const projectData = await ctx.runQuery(internal.ai.getProjectForAnalysis, {
       projectId: args.projectId,
+      userId: user._id,
     });
 
     if (!projectData) {
-      throw new Error("Project not found");
+      throw new Error("Project not found or unauthorized");
     }
 
     if (projectData.transcripts.length === 0) {
@@ -949,7 +1074,8 @@ export const regenerateVoiceProfile = action({
       let transcriptsToAnalyze = projectData.transcripts;
       const combinedLength = transcriptsToAnalyze.join("").length;
 
-      if (estimateTokenCount(combinedLength.toString()) > 80000) {
+      // Fix: Use the actual combined length for token estimation (4 chars per token)
+      if (Math.ceil(combinedLength / 4) > 80000) {
         transcriptsToAnalyze = projectData.transcripts.flatMap((t) =>
           chunkText(t, 20000)
         );

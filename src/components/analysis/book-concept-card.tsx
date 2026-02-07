@@ -153,7 +153,17 @@ export function BookConceptGrid({
 
       {onRequestMore && (
         <div className="flex justify-center pt-4">
-          <Button variant="outline" onClick={onRequestMore} isLoading={isLoadingMore}>
+          <Button
+            variant="outline"
+            onClick={async () => {
+              try {
+                await onRequestMore();
+              } catch (error) {
+                console.error("Failed to generate more concepts:", error);
+              }
+            }}
+            isLoading={isLoadingMore}
+          >
             Generate More Concepts
           </Button>
         </div>

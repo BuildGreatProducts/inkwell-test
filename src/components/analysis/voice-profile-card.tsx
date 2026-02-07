@@ -40,6 +40,19 @@ export function VoiceProfileCard({
     additionalNotes: voiceProfile.additionalNotes || "",
   });
 
+  // Re-initialize editedProfile from current props when entering edit mode
+  const startEditing = () => {
+    setEditedProfile({
+      formalityLevel: voiceProfile.formalityLevel,
+      teachingStyle: voiceProfile.teachingStyle,
+      vocabularyPatterns: voiceProfile.vocabularyPatterns.join("\n"),
+      commonPhrases: voiceProfile.commonPhrases.join("\n"),
+      personalityTraits: voiceProfile.personalityTraits.join("\n"),
+      additionalNotes: voiceProfile.additionalNotes || "",
+    });
+    setIsEditing(true);
+  };
+
   const updateVoiceProfile = useMutation(api.ai.updateVoiceProfile);
   const approveVoiceProfile = useMutation(api.ai.approveVoiceProfile);
 
@@ -88,9 +101,14 @@ export function VoiceProfileCard({
 
   const handleRegenerate = async () => {
     if (onRegenerate && feedback.trim()) {
-      await onRegenerate(feedback.trim());
-      setFeedback("");
-      setShowFeedbackForm(false);
+      try {
+        await onRegenerate(feedback.trim());
+      } catch (error) {
+        console.error("Failed to regenerate voice profile:", error);
+      } finally {
+        setFeedback("");
+        setShowFeedbackForm(false);
+      }
     }
   };
 
@@ -312,7 +330,7 @@ export function VoiceProfileCard({
 
       {/* Actions */}
       <div className="flex flex-wrap gap-3 mt-6 pt-6 border-t border-neutral-100">
-        <Button variant="outline" onClick={() => setIsEditing(true)}>
+        <Button variant="outline" onClick={startEditing}>
           Edit Profile
         </Button>
         {onRegenerate && !showFeedbackForm && (

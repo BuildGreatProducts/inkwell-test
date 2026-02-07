@@ -11,18 +11,38 @@ import { VoiceProfileCard, BookConceptGrid } from "@/components/analysis";
 
 type AnalysisStep = "transcripts" | "voice-profile" | "concepts";
 
+// Helper to validate Convex ID format (basic validation)
+function isValidConvexId(id: string): boolean {
+  return typeof id === "string" && id.length > 0 && /^[a-z0-9]+$/i.test(id);
+}
+
 export default function AnalyzePage({
   params,
 }: {
   params: Promise<{ projectId: string }>;
 }) {
   const resolvedParams = use(params);
-  const projectId = resolvedParams.projectId as Id<"projects">;
 
-  const project = useQuery(api.projects.getWithDetails, { projectId });
-  const transcriptStats = useQuery(api.videos.getTranscriptStats, { projectId });
-  const voiceProfile = useQuery(api.ai.getVoiceProfile, { projectId });
-  const bookConcepts = useQuery(api.ai.getBookConcepts, { projectId });
+  // Validate projectId before treating it as a Convex Id
+  const rawProjectId = resolvedParams.projectId;
+  const projectId = isValidConvexId(rawProjectId) ? (rawProjectId as Id<"projects">) : null;
+
+  const project = useQuery(
+    api.projects.getWithDetails,
+    projectId ? { projectId } : "skip"
+  );
+  const transcriptStats = useQuery(
+    api.videos.getTranscriptStats,
+    projectId ? { projectId } : "skip"
+  );
+  const voiceProfile = useQuery(
+    api.ai.getVoiceProfile,
+    projectId ? { projectId } : "skip"
+  );
+  const bookConcepts = useQuery(
+    api.ai.getBookConcepts,
+    projectId ? { projectId } : "skip"
+  );
 
   const generateVoiceProfile = useAction(api.ai.generateVoiceProfile);
   const regenerateVoiceProfile = useAction(api.ai.regenerateVoiceProfile);
@@ -33,7 +53,28 @@ export default function AnalyzePage({
   const [isRegeneratingVoiceProfile, setIsRegeneratingVoiceProfile] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (project === undefined || voiceProfile === undefined || bookConcepts === undefined) {
+  if (!projectId) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <Card variant="bordered" className="text-center py-12">
+            <h2 className="font-heading font-semibold text-xl text-neutral-900 mb-2">
+              Invalid Project ID
+            </h2>
+            <p className="text-neutral-600 mb-6">
+              The project ID in the URL is not valid.
+            </p>
+            <Link href="/dashboard">
+              <Button>Go to Dashboard</Button>
+            </Link>
+          </Card>
+        </main>
+      </div>
+    );
+  }
+
+  if (project === undefined || transcriptStats === undefined || voiceProfile === undefined || bookConcepts === undefined) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
