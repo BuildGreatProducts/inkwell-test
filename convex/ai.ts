@@ -386,7 +386,7 @@ function parseVoiceProfileResponse(response: string): VoiceProfileData {
       personalityTraits: parsed.personalityTraits.filter(
         (p: unknown): p is string => typeof p === "string"
       ),
-      additionalNotes: parsed.additionalNotes as string | undefined,
+      additionalNotes: typeof parsed.additionalNotes === "string" ? parsed.additionalNotes : undefined,
     };
   } catch (error) {
     throw new Error(
@@ -964,6 +964,12 @@ export const generateVoiceProfile = action({
         ...voiceProfile,
       });
 
+      // Restore original status after successful processing
+      await ctx.runMutation(internal.ai.updateProjectStatus, {
+        projectId: args.projectId,
+        status: originalStatus,
+      });
+
       return voiceProfileId;
     } catch (error) {
       // Restore original status on error
@@ -1115,6 +1121,12 @@ export const generateBookConcepts = action({
         conceptIds.push(conceptId);
       }
 
+      // Restore original status after successful processing
+      await ctx.runMutation(internal.ai.updateProjectStatus, {
+        projectId: args.projectId,
+        status: originalStatus,
+      });
+
       return conceptIds;
     } catch (error) {
       // Restore original status on error
@@ -1229,6 +1241,12 @@ Please generate an updated voice profile that addresses this feedback while main
       const voiceProfileId = await ctx.runMutation(internal.ai.saveVoiceProfile, {
         projectId: args.projectId,
         ...voiceProfile,
+      });
+
+      // Restore original status after successful processing
+      await ctx.runMutation(internal.ai.updateProjectStatus, {
+        projectId: args.projectId,
+        status: originalStatus,
       });
 
       return voiceProfileId;

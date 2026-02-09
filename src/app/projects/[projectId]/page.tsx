@@ -119,6 +119,8 @@ export default function ProjectDetailPage({
         // If there are more videos pending, continue fetching
         if (result.remaining > 0) {
           console.log(`${result.remaining} more videos pending (round ${round}). Fetching...`);
+          // Add delay between rounds to prevent rapid repeated requests
+          await new Promise((resolve) => setTimeout(resolve, 1500));
         } else {
           hasMore = false;
         }
@@ -429,7 +431,12 @@ export default function ProjectDetailPage({
                 <CardTitle>Quick Actions</CardTitle>
               </CardHeader>
               <div className="px-6 pb-6 space-y-2">
-                <Button variant="outline" className="w-full justify-start">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  disabled
+                  title="Coming soon"
+                >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="16"
@@ -447,7 +454,12 @@ export default function ProjectDetailPage({
                   </svg>
                   Add More Videos
                 </Button>
-                <Button variant="outline" className="w-full justify-start">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  disabled
+                  title="Coming soon"
+                >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="16"
@@ -465,7 +477,12 @@ export default function ProjectDetailPage({
                   </svg>
                   Edit Project Details
                 </Button>
-                <Button variant="ghost" className="w-full justify-start text-error-600">
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start text-error-600"
+                  disabled
+                  title="Coming soon"
+                >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     width="16"
