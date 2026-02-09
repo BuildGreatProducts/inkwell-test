@@ -34,6 +34,7 @@ export default function ProjectDetailPage({
     projectId ? { projectId } : "skip"
   );
   const [isFetchingTranscripts, setIsFetchingTranscripts] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   if (!projectId) {
     return (
@@ -56,7 +57,7 @@ export default function ProjectDetailPage({
     );
   }
 
-  if (project === undefined) {
+  if (project === undefined || transcriptStats === undefined) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
@@ -89,6 +90,7 @@ export default function ProjectDetailPage({
   const handleFetchTranscripts = async () => {
     const MAX_FETCH_ROUNDS = 20; // Prevent unbounded fetching
     setIsFetchingTranscripts(true);
+    setFetchError(null); // Clear any previous error
 
     try {
       let round = 0;
@@ -123,10 +125,15 @@ export default function ProjectDetailPage({
       }
 
       if (round >= MAX_FETCH_ROUNDS) {
-        console.error(`Reached maximum fetch rounds (${MAX_FETCH_ROUNDS}). Some transcripts may not be fetched.`);
+        setFetchError(`Reached maximum fetch limit. Some transcripts may not be fetched.`);
       }
     } catch (error) {
       console.error("Failed to fetch transcripts:", error);
+      setFetchError(
+        error instanceof Error
+          ? `Failed to fetch transcripts: ${error.message}`
+          : "Failed to fetch transcripts. Please try again."
+      );
     } finally {
       setIsFetchingTranscripts(false);
     }
@@ -204,6 +211,42 @@ export default function ProjectDetailPage({
             )}
           </div>
         </div>
+
+        {/* Error Banner */}
+        {fetchError && (
+          <div className="mb-6 rounded-lg border border-error-200 bg-error-50 px-4 py-3">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0">
+                <svg
+                  className="h-5 w-5 text-error-600"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm text-error-700">{fetchError}</p>
+              </div>
+              <button
+                onClick={() => setFetchError(null)}
+                className="flex-shrink-0 text-error-500 hover:text-error-700"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path
+                    fillRule="evenodd"
+                    d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Stats Cards */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">

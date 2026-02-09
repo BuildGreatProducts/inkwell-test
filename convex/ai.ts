@@ -344,12 +344,25 @@ Respond ONLY with valid JSON. Do not include any other text.`;
 
 function parseVoiceProfileResponse(response: string): VoiceProfileData {
   try {
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("No JSON object found in response");
-    }
+    // First try parsing the entire response directly (for pure JSON responses)
+    let parsed: Record<string, unknown>;
+    const trimmed = response.trim();
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      // Fall back to extracting JSON substring if direct parse fails
+      // Use a more careful extraction - find first { and last }
+      const firstBrace = trimmed.indexOf("{");
+      const lastBrace = trimmed.lastIndexOf("}");
+
+      if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+        throw new Error("No JSON object found in response");
+      }
+
+      const jsonStr = trimmed.slice(firstBrace, lastBrace + 1);
+      parsed = JSON.parse(jsonStr);
+    }
 
     if (
       typeof parsed.formalityLevel !== "string" ||
@@ -373,7 +386,7 @@ function parseVoiceProfileResponse(response: string): VoiceProfileData {
       personalityTraits: parsed.personalityTraits.filter(
         (p: unknown): p is string => typeof p === "string"
       ),
-      additionalNotes: parsed.additionalNotes || undefined,
+      additionalNotes: parsed.additionalNotes as string | undefined,
     };
   } catch (error) {
     throw new Error(
@@ -384,12 +397,25 @@ function parseVoiceProfileResponse(response: string): VoiceProfileData {
 
 function parseBookConceptsResponse(response: string): BookConceptData[] {
   try {
-    const jsonMatch = response.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("No JSON object found in response");
-    }
+    // First try parsing the entire response directly (for pure JSON responses)
+    let parsed: Record<string, unknown>;
+    const trimmed = response.trim();
 
-    const parsed = JSON.parse(jsonMatch[0]);
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      // Fall back to extracting JSON substring if direct parse fails
+      // Use a more careful extraction - find first { and last }
+      const firstBrace = trimmed.indexOf("{");
+      const lastBrace = trimmed.lastIndexOf("}");
+
+      if (firstBrace === -1 || lastBrace === -1 || lastBrace <= firstBrace) {
+        throw new Error("No JSON object found in response");
+      }
+
+      const jsonStr = trimmed.slice(firstBrace, lastBrace + 1);
+      parsed = JSON.parse(jsonStr);
+    }
 
     if (!Array.isArray(parsed.concepts)) {
       throw new Error("Invalid book concepts structure");
@@ -876,6 +902,9 @@ export const generateVoiceProfile = action({
       throw new Error("No transcripts available for analysis");
     }
 
+    // Save original status to restore on error
+    const originalStatus = projectData.project.status;
+
     // Update project status to analyzing
     await ctx.runMutation(internal.ai.updateProjectStatus, {
       projectId: args.projectId,
@@ -937,10 +966,11 @@ export const generateVoiceProfile = action({
 
       return voiceProfileId;
     } catch (error) {
-      // Reset status on error
+      // Restore original status on error
+      console.error("Failed to generate voice profile:", error);
       await ctx.runMutation(internal.ai.updateProjectStatus, {
         projectId: args.projectId,
-        status: "draft",
+        status: originalStatus,
       });
       throw error;
     }
@@ -985,6 +1015,15 @@ export const generateBookConcepts = action({
     if (!voiceProfile) {
       throw new Error("Voice profile not found. Generate voice profile first.");
     }
+
+    // Save original status to restore on error
+    const originalStatus = projectData.project.status;
+
+    // Update project status to analyzing
+    await ctx.runMutation(internal.ai.updateProjectStatus, {
+      projectId: args.projectId,
+      status: "analyzing",
+    });
 
     try {
       // Create Anthropic client
@@ -1078,11 +1117,11 @@ export const generateBookConcepts = action({
 
       return conceptIds;
     } catch (error) {
-      // Log error and reset status on failure
+      // Restore original status on error
       console.error("Failed to generate book concepts:", error);
       await ctx.runMutation(internal.ai.updateProjectStatus, {
         projectId: args.projectId,
-        status: "draft",
+        status: originalStatus,
       });
       throw error;
     }
@@ -1119,6 +1158,15 @@ export const regenerateVoiceProfile = action({
     // Get existing voice profile
     const existingProfile = await ctx.runQuery(internal.ai.getVoiceProfileByProject, {
       projectId: args.projectId,
+    });
+
+    // Save original status to restore on error
+    const originalStatus = projectData.project.status;
+
+    // Update project status to analyzing
+    await ctx.runMutation(internal.ai.updateProjectStatus, {
+      projectId: args.projectId,
+      status: "analyzing",
     });
 
     try {
@@ -1185,11 +1233,11 @@ Please generate an updated voice profile that addresses this feedback while main
 
       return voiceProfileId;
     } catch (error) {
-      // Log error and reset status on failure
+      // Restore original status on error
       console.error("Failed to regenerate voice profile:", error);
       await ctx.runMutation(internal.ai.updateProjectStatus, {
         projectId: args.projectId,
-        status: "draft",
+        status: originalStatus,
       });
       throw error;
     }
