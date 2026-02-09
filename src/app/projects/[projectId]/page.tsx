@@ -1,0 +1,511 @@
+"use client";
+
+import { use, useState } from "react";
+import Link from "next/link";
+import { useQuery } from "convex/react";
+import { api } from "../../../../convex/_generated/api";
+import { Id } from "../../../../convex/_generated/dataModel";
+import { Header } from "@/components/layout";
+import { Button, Card, CardHeader, CardTitle, CardDescription, LoadingScreen } from "@/components/ui";
+
+// Helper to validate Convex ID format (Crockford Base32)
+function isValidConvexId(id: string): boolean {
+  // Convex IDs use Crockford Base32 which excludes I, L, O, U
+  return typeof id === "string" && id.length > 0 && /^[0-9a-hj-km-np-tv-z]+$/i.test(id);
+}
+
+export default function ProjectDetailPage({
+  params,
+}: {
+  params: Promise<{ projectId: string }>;
+}) {
+  const resolvedParams = use(params);
+
+  // Validate projectId before treating it as a Convex Id
+  const rawProjectId = resolvedParams.projectId;
+  const projectId = isValidConvexId(rawProjectId) ? (rawProjectId as Id<"projects">) : null;
+
+  const project = useQuery(
+    api.projects.getWithDetails,
+    projectId ? { projectId } : "skip"
+  );
+  const transcriptStats = useQuery(
+    api.videos.getTranscriptStats,
+    projectId ? { projectId } : "skip"
+  );
+  const [isFetchingTranscripts, setIsFetchingTranscripts] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+
+  if (!projectId) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <Card variant="bordered" className="text-center py-12">
+            <h2 className="font-heading font-semibold text-xl text-neutral-900 mb-2">
+              Invalid Project ID
+            </h2>
+            <p className="text-neutral-600 mb-6">
+              The project ID in the URL is not valid.
+            </p>
+            <Link href="/dashboard">
+              <Button>Go to Dashboard</Button>
+            </Link>
+          </Card>
+        </main>
+      </div>
+    );
+  }
+
+  if (project === undefined || transcriptStats === undefined) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <LoadingScreen message="Loading project..." />
+      </div>
+    );
+  }
+
+  if (project === null) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+          <Card variant="bordered" className="text-center py-12">
+            <h2 className="font-heading font-semibold text-xl text-neutral-900 mb-2">
+              Project Not Found
+            </h2>
+            <p className="text-neutral-600 mb-6">
+              This project doesn&apos;t exist or you don&apos;t have access to it.
+            </p>
+            <Link href="/dashboard">
+              <Button>Go to Dashboard</Button>
+            </Link>
+          </Card>
+        </main>
+      </div>
+    );
+  }
+
+  const handleFetchTranscripts = async () => {
+    const MAX_FETCH_ROUNDS = 20; // Prevent unbounded fetching
+    setIsFetchingTranscripts(true);
+    setFetchError(null); // Clear any previous error
+
+    try {
+      let round = 0;
+      let hasMore = true;
+
+      while (hasMore && round < MAX_FETCH_ROUNDS) {
+        round++;
+
+        // Call the API endpoint which handles status updates internally
+        const response = await fetch("/api/transcripts/fetch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId }),
+        });
+
+        // Validate response before parsing
+        if (!response.ok) {
+          const errorBody = await response.text();
+          throw new Error(
+            `Fetch failed with status ${response.status}: ${errorBody}`
+          );
+        }
+
+        const result = await response.json();
+
+        // If there are more videos pending, continue fetching
+        if (result.remaining > 0) {
+          console.log(`${result.remaining} more videos pending (round ${round}). Fetching...`);
+          // Add delay between rounds to prevent rapid repeated requests
+          await new Promise((resolve) => setTimeout(resolve, 1500));
+        } else {
+          hasMore = false;
+        }
+      }
+
+      if (round >= MAX_FETCH_ROUNDS) {
+        setFetchError(`Reached maximum fetch limit. Some transcripts may not be fetched.`);
+      }
+    } catch (error) {
+      console.error("Failed to fetch transcripts:", error);
+      setFetchError(
+        error instanceof Error
+          ? `Failed to fetch transcripts: ${error.message}`
+          : "Failed to fetch transcripts. Please try again."
+      );
+    } finally {
+      setIsFetchingTranscripts(false);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "completed":
+        return "bg-success-50 text-success-600";
+      case "fetching":
+        return "bg-primary-50 text-primary-600";
+      case "failed":
+      case "unavailable":
+        return "bg-error-50 text-error-600";
+      default:
+        return "bg-neutral-100 text-neutral-600";
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Header />
+
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
+        {/* Breadcrumb */}
+        <nav className="mb-6">
+          <ol className="flex items-center gap-2 text-sm">
+            <li>
+              <Link href="/dashboard" className="text-neutral-500 hover:text-neutral-700">
+                Dashboard
+              </Link>
+            </li>
+            <li className="text-neutral-400">/</li>
+            <li className="text-neutral-900">{project.name}</li>
+          </ol>
+        </nav>
+
+        {/* Project Header */}
+        <div className="flex items-start justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-heading font-bold text-neutral-900">{project.name}</h1>
+            {project.description && (
+              <p className="mt-2 text-neutral-600">{project.description}</p>
+            )}
+            <div className="mt-3 flex items-center gap-4">
+              <span
+                className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                  project.status === "completed"
+                    ? "bg-success-50 text-success-600"
+                    : project.status === "draft"
+                      ? "bg-neutral-100 text-neutral-600"
+                      : "bg-primary-50 text-primary-600"
+                }`}
+              >
+                {project.status.charAt(0).toUpperCase() + project.status.slice(1)}
+              </span>
+              <span className="text-sm text-neutral-500">
+                Created {new Date(project.createdAt).toLocaleDateString()}
+              </span>
+            </div>
+          </div>
+          <div className="flex gap-3">
+            <Button variant="outline">Edit Project</Button>
+            {project.status === "draft" && transcriptStats && transcriptStats.pending > 0 && (
+              <Button variant="secondary" onClick={handleFetchTranscripts} isLoading={isFetchingTranscripts}>
+                {isFetchingTranscripts ? "Fetching..." : `Fetch Transcripts (${transcriptStats.pending} pending)`}
+              </Button>
+            )}
+            {transcriptStats && transcriptStats.completed > 0 && (
+              <Link href={`/projects/${projectId}/analyze`}>
+                <Button>
+                  {project.voiceProfile ? "View Analysis" : "Start Analysis"}
+                </Button>
+              </Link>
+            )}
+          </div>
+        </div>
+
+        {/* Error Banner */}
+        {fetchError && (
+          <div className="mb-6 rounded-lg border border-error-200 bg-error-50 px-4 py-3">
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0">
+                <svg
+                  className="h-5 w-5 text-error-600"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <p className="text-sm text-error-700">{fetchError}</p>
+              </div>
+              <button
+                onClick={() => setFetchError(null)}
+                className="flex-shrink-0 text-error-500 hover:text-error-700"
+              >
+                <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path
+                    fillRule="evenodd"
+                    d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <Card variant="bordered" className="p-4">
+            <div className="text-2xl font-bold text-neutral-900">{project.videos.length}</div>
+            <div className="text-sm text-neutral-500">Videos</div>
+          </Card>
+          <Card variant="bordered" className="p-4">
+            <div className="text-2xl font-bold text-neutral-900">
+              {transcriptStats?.completed || 0}
+            </div>
+            <div className="text-sm text-neutral-500">Transcripts Ready</div>
+          </Card>
+          <Card variant="bordered" className="p-4">
+            <div className="text-2xl font-bold text-neutral-900">{project.chapters.length}</div>
+            <div className="text-sm text-neutral-500">Chapters</div>
+          </Card>
+          <Card variant="bordered" className="p-4">
+            <div className="text-2xl font-bold text-neutral-900">
+              {project.voiceProfile ? "Yes" : "No"}
+            </div>
+            <div className="text-sm text-neutral-500">Voice Profile</div>
+          </Card>
+        </div>
+
+        {/* Main Content */}
+        <div className="grid lg:grid-cols-3 gap-8">
+          {/* Videos List */}
+          <div className="lg:col-span-2">
+            <Card variant="default">
+              <CardHeader>
+                <CardTitle>Videos ({project.videos.length})</CardTitle>
+                <CardDescription>
+                  Videos selected for this book project
+                </CardDescription>
+              </CardHeader>
+
+              <div className="divide-y divide-neutral-100">
+                {project.videos.length === 0 ? (
+                  <div className="p-6 text-center text-neutral-500">
+                    No videos in this project yet.
+                  </div>
+                ) : (
+                  project.videos.map((video) => (
+                    <div key={video._id} className="p-4 flex items-start gap-4">
+                      {/* Thumbnail */}
+                      <div className="w-32 flex-shrink-0">
+                        <div className="aspect-video bg-neutral-100 rounded-lg overflow-hidden">
+                          {video.thumbnailUrl && (
+                            <img
+                              src={video.thumbnailUrl}
+                              alt={video.title}
+                              className="w-full h-full object-cover"
+                            />
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-neutral-900 line-clamp-2">
+                          {video.title}
+                        </h3>
+                        <div className="mt-1 flex items-center gap-3 text-sm text-neutral-500">
+                          <span>{video.duration}</span>
+                          <span>
+                            {video.publishedAt &&
+                              new Date(video.publishedAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                        <div className="mt-2">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${getStatusColor(video.transcriptStatus)}`}
+                          >
+                            {video.transcriptStatus === "completed"
+                              ? "Transcript Ready"
+                              : video.transcriptStatus === "fetching"
+                                ? "Fetching..."
+                                : video.transcriptStatus === "failed"
+                                  ? "Failed"
+                                  : video.transcriptStatus === "unavailable"
+                                    ? "No Transcript"
+                                    : "Pending"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </Card>
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Next Steps */}
+            <Card variant="default">
+              <CardHeader>
+                <CardTitle>Next Steps</CardTitle>
+              </CardHeader>
+              <div className="px-6 pb-6">
+                <ol className="space-y-3">
+                  <li className="flex items-start gap-3">
+                    <div
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
+                        transcriptStats && transcriptStats.completed === project.videos.length
+                          ? "bg-success-100 text-success-600"
+                          : "bg-primary-100 text-primary-600"
+                      }`}
+                    >
+                      1
+                    </div>
+                    <div>
+                      <p className="font-medium text-neutral-900">Fetch Transcripts</p>
+                      <p className="text-sm text-neutral-500">
+                        {transcriptStats?.completed || 0} of {project.videos.length} complete
+                      </p>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
+                        project.voiceProfile
+                          ? "bg-success-100 text-success-600"
+                          : "bg-neutral-100 text-neutral-400"
+                      }`}
+                    >
+                      2
+                    </div>
+                    <div>
+                      <p className="font-medium text-neutral-900">Generate Voice Profile</p>
+                      <p className="text-sm text-neutral-500">
+                        {project.voiceProfile ? "Completed" : "Not started"}
+                      </p>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
+                        project.selectedConcept
+                          ? "bg-success-100 text-success-600"
+                          : "bg-neutral-100 text-neutral-400"
+                      }`}
+                    >
+                      3
+                    </div>
+                    <div>
+                      <p className="font-medium text-neutral-900">Choose Book Concept</p>
+                      <p className="text-sm text-neutral-500">
+                        {project.selectedConcept ? "Selected" : "Not started"}
+                      </p>
+                    </div>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <div
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
+                        project.chapters.length > 0
+                          ? "bg-success-100 text-success-600"
+                          : "bg-neutral-100 text-neutral-400"
+                      }`}
+                    >
+                      4
+                    </div>
+                    <div>
+                      <p className="font-medium text-neutral-900">Generate Chapters</p>
+                      <p className="text-sm text-neutral-500">
+                        {project.chapters.length > 0
+                          ? `${project.chapters.length} chapters`
+                          : "Not started"}
+                      </p>
+                    </div>
+                  </li>
+                </ol>
+              </div>
+            </Card>
+
+            {/* Quick Actions */}
+            <Card variant="default">
+              <CardHeader>
+                <CardTitle>Quick Actions</CardTitle>
+              </CardHeader>
+              <div className="px-6 pb-6 space-y-2">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  disabled
+                  title="Coming soon"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="mr-2"
+                  >
+                    <path d="M5 12h14" />
+                    <path d="M12 5v14" />
+                  </svg>
+                  Add More Videos
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  disabled
+                  title="Coming soon"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="mr-2"
+                  >
+                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                    <path d="m15 5 4 4" />
+                  </svg>
+                  Edit Project Details
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start text-error-600"
+                  disabled
+                  title="Coming soon"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="mr-2"
+                  >
+                    <path d="M3 6h18" />
+                    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                  </svg>
+                  Delete Project
+                </Button>
+              </div>
+            </Card>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
